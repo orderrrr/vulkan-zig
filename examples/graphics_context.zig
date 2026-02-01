@@ -71,10 +71,10 @@ pub const GraphicsContext = struct {
         const instance = try self.vkb.createInstance(&.{
             .p_application_info = &.{
                 .p_application_name = app_name,
-                .application_version = @bitCast(vk.makeApiVersion(0, 0, 0, 0)),
+                .application_version = vk.makeApiVersion(0, 0, 0, 0).toU32(),
                 .p_engine_name = app_name,
-                .engine_version = @bitCast(vk.makeApiVersion(0, 0, 0, 0)),
-                .api_version = @bitCast(vk.API_VERSION_1_3),
+                .engine_version = vk.makeApiVersion(0, 0, 0, 0).toU32(),
+                .api_version = vk.API_VERSION_1_3.toU32(),
             },
             .enabled_layer_count = required_layer_names.len,
             .pp_enabled_layer_names = @ptrCast(&required_layer_names),
