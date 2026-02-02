@@ -85,6 +85,9 @@ const preamble =
     \\    minor: u10,
     \\    major: u7,
     \\    variant: u3,
+    \\    pub fn toU32(ver: Version) u32 {
+    \\        return @bitCast(ver);
+    \\    }
     \\};
     \\pub fn makeApiVersion(variant: u3, major: u7, minor: u10, patch: u12) Version {
     \\    return .{ .variant = variant, .major = major, .minor = minor, .patch = patch };
