@@ -782,13 +782,23 @@ const Renderer = struct {
         try self.writeIdentifier(name);
     }
 
+    fn renderParamName(self: *Self, name: []const u8) !void {
+        if (mem.eql(u8, name, "ubm_device")) {
+            // This parameter shadows a global type. Changing the name is easiest since we don't need to
+            // change the API this way.
+            try self.writer.writeAll("ubm_device_");
+        } else {
+            try self.writeIdentifierWithCase(.snake, name);
+        }
+    }
+
     fn renderCommandPtr(self: *Self, command_ptr: reg.Command, optional: bool) !void {
         if (optional) {
             try self.writer.writeByte('?');
         }
         try self.writer.writeAll("*const fn(");
         for (command_ptr.params) |param| {
-            try self.writeIdentifierWithCase(.snake, param.name);
+            try self.renderParamName(param.name);
             try self.writer.writeAll(": ");
 
             blk: {
@@ -1639,12 +1649,10 @@ const Renderer = struct {
                     if (mem.eql(u8, param.param_type.name, dispatch_handle)) {
                         try self.writer.writeAll("self.handle");
                     } else {
-                        try self.writeIdentifierWithCase(.snake, param.name);
+                        try self.renderParamName(param.name);
                     }
                 },
-                else => {
-                    try self.writeIdentifierWithCase(.snake, param.name);
-                },
+                else => try self.renderParamName(param.name),
             }
             try self.writer.writeAll(", ");
         }
@@ -1698,12 +1706,10 @@ const Renderer = struct {
                     if (mem.eql(u8, param.param_type.name, dispatch_handle)) {
                         try self.writer.writeAll("self.handle");
                     } else {
-                        try self.writeIdentifierWithCase(.snake, param.name);
+                        try self.renderParamName(param.name);
                     }
                 },
-                else => {
-                    try self.writeIdentifierWithCase(.snake, param.name);
-                },
+                else => try self.renderParamName(param.name),
             }
             try self.writer.writeAll(", ");
         }
@@ -1751,7 +1757,7 @@ const Renderer = struct {
     }
 
     fn renderWrapperParam(self: *Self, param: reg.Command.Param) !void {
-        try self.writeIdentifierWithCase(.snake, param.name);
+        try self.renderParamName(param.name);
         try self.writer.writeAll(": ");
         try self.renderTypeInfo(param.param_type);
         try self.writer.writeAll(", ");
@@ -1819,12 +1825,10 @@ const Renderer = struct {
                     try self.writeIdentifierWithCase(.snake, return_var_name.?);
                     if (returns.len > 1) {
                         try self.writer.writeByte('.');
-                        try self.writeIdentifierWithCase(.snake, derefName(param.name));
+                        try self.renderParamName(derefName(param.name));
                     }
                 },
-                else => {
-                    try self.writeIdentifierWithCase(.snake, param.name);
-                },
+                else => try self.renderParamName(param.name),
             }
 
             try self.writer.writeAll(", ");
@@ -1888,7 +1892,7 @@ const Renderer = struct {
         try self.renderReturnStructName(command_name);
         try self.writer.writeAll(" = struct {\n");
         for (returns) |ret| {
-            try self.writeIdentifierWithCase(.snake, ret.name);
+            try self.renderParamName(ret.name);
             try self.writer.writeAll(": ");
             try self.renderTypeInfo(ret.return_value_type);
             try self.writer.writeAll(", ");
@@ -2070,7 +2074,7 @@ const Renderer = struct {
         try self.renderWrapperName(wrapped_name, "", .wrapper);
         try self.writer.writeAll("(\n");
         for (params) |param| {
-            try self.writeIdentifierWithCase(.snake, param.name);
+            try self.renderParamName(param.name);
             try self.writer.writeAll(", ");
         }
         try self.writer.writeAll("&count, null);\n");
@@ -2093,7 +2097,7 @@ const Renderer = struct {
         try self.renderWrapperName(wrapped_name, "", .wrapper);
         try self.writer.writeAll("(\n");
         for (params) |param| {
-            try self.writeIdentifierWithCase(.snake, param.name);
+            try self.renderParamName(param.name);
             try self.writer.writeAll(", ");
         }
         try self.writer.writeAll("&count, data.ptr);\n");
