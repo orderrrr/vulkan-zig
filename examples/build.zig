@@ -8,7 +8,8 @@ pub fn build(b: *std.Build) void {
     const maybe_override_registry = b.option([]const u8, "override-registry", "Override the path to the Vulkan registry used for the examples");
     const use_zig_shaders = b.option(bool, "zig-shader", "Use Zig shaders instead of GLSL") orelse false;
 
-    const registry = b.dependency("vulkan_headers", .{}).path("registry/vk.xml");
+    const vulkan_headers = b.dependency("vulkan_headers", .{});
+    const registry = vulkan_headers.path("registry/vk.xml");
 
     const triangle_exe = b.addExecutable(.{
         .name = "triangle",
@@ -31,6 +32,7 @@ pub fn build(b: *std.Build) void {
 
     const vulkan = b.dependency("vulkan_zig", .{
         .registry = registry_path,
+        .vulkan_include = vulkan_headers.path("include"),
     }).module("vulkan-zig");
 
     triangle_exe.root_module.addImport("vulkan", vulkan);

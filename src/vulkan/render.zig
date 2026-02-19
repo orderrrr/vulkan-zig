@@ -16,6 +16,7 @@ const preamble =
     \\const root = @import("root");
     \\const vk = @This();
     \\const Allocator = std.mem.Allocator;
+    \\pub const vma = @import("vma");
     \\
     \\pub const vulkan_call_conv: std.builtin.CallingConvention = if (builtin.os.tag == .windows and builtin.cpu.arch == .x86)
     \\        .winapi
