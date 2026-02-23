@@ -87,6 +87,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = vk_zig,
         });
         vk_zig_module.addImport("vma", vma_module);
+        vma_module.addImport("vulkan", vk_zig_module);
 
         // Also install vk.zig, if passed.
         const vk_zig_install_step = b.addInstallFile(vk_zig, "src/vk.zig");
