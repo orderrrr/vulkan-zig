@@ -634,14 +634,14 @@ pub inline fn allocateMemoryPages(allocator: Allocator, memory_requirements: vk.
 pub inline fn allocateMemoryForBuffer(allocator: Allocator, buffer: vk.Buffer, create_info: AllocationCreateInfo) Error!struct { allocation: Allocation, allocation_info: AllocationInfo } {
     var allocation: Allocation = undefined;
     var info: AllocationInfo = undefined;
-    try checkResult(c.vmaAllocateMemoryForBuffer(allocator, @bitCast(buffer), @ptrCast(&create_info), @ptrCast(&allocation), @ptrCast(&info)));
+    try checkResult(c.vmaAllocateMemoryForBuffer(allocator, @ptrFromInt(@intFromEnum(buffer)), @ptrCast(&create_info), @ptrCast(&allocation), @ptrCast(&info)));
     return .{ .allocation = allocation, .allocation_info = info };
 }
 
 pub inline fn allocateMemoryForImage(allocator: Allocator, image: vk.Image, create_info: AllocationCreateInfo) Error!struct { allocation: Allocation, allocation_info: AllocationInfo } {
     var allocation: Allocation = undefined;
     var info: AllocationInfo = undefined;
-    try checkResult(c.vmaAllocateMemoryForImage(allocator, @bitCast(image), @ptrCast(&create_info), @ptrCast(&allocation), @ptrCast(&info)));
+    try checkResult(c.vmaAllocateMemoryForImage(allocator, @ptrFromInt(@intFromEnum(image)), @ptrCast(&create_info), @ptrCast(&allocation), @ptrCast(&info)));
     return .{ .allocation = allocation, .allocation_info = info };
 }
 
@@ -696,19 +696,19 @@ pub inline fn endDefragmentationPass(allocator: Allocator, context: Defragmentat
 }
 
 pub inline fn bindBufferMemory(allocator: Allocator, allocation: Allocation, buffer: vk.Buffer) Error!void {
-    try checkResult(c.vmaBindBufferMemory(allocator, allocation, @bitCast(buffer)));
+    try checkResult(c.vmaBindBufferMemory(allocator, allocation, @ptrFromInt(@intFromEnum(buffer))));
 }
 
 pub inline fn bindBufferMemory2(allocator: Allocator, allocation: Allocation, allocation_local_offset: vk.DeviceSize, buffer: vk.Buffer, p_next: ?*const anyopaque) Error!void {
-    try checkResult(c.vmaBindBufferMemory2(allocator, allocation, allocation_local_offset, @bitCast(buffer), p_next));
+    try checkResult(c.vmaBindBufferMemory2(allocator, allocation, allocation_local_offset, @ptrFromInt(@intFromEnum(buffer)), p_next));
 }
 
 pub inline fn bindImageMemory(allocator: Allocator, allocation: Allocation, image: vk.Image) Error!void {
-    try checkResult(c.vmaBindImageMemory(allocator, allocation, @bitCast(image)));
+    try checkResult(c.vmaBindImageMemory(allocator, allocation, @ptrFromInt(@intFromEnum(image))));
 }
 
 pub inline fn bindImageMemory2(allocator: Allocator, allocation: Allocation, allocation_local_offset: vk.DeviceSize, image: vk.Image, p_next: ?*const anyopaque) Error!void {
-    try checkResult(c.vmaBindImageMemory2(allocator, allocation, allocation_local_offset, @bitCast(image), p_next));
+    try checkResult(c.vmaBindImageMemory2(allocator, allocation, allocation_local_offset, @ptrFromInt(@intFromEnum(image)), p_next));
 }
 
 pub inline fn createBuffer(allocator: Allocator, buffer_create_info: vk.BufferCreateInfo, alloc_create_info: AllocationCreateInfo) Error!struct { buffer: vk.Buffer, allocation: Allocation, allocation_info: AllocationInfo } {
@@ -887,11 +887,11 @@ pub inline fn endDefragmentation(allocator: Allocator, context: DefragmentationC
 }
 
 pub inline fn destroyBuffer(allocator: Allocator, buffer: vk.Buffer, allocation: Allocation) void {
-    c.vmaDestroyBuffer(allocator, @bitCast(buffer), allocation);
+    c.vmaDestroyBuffer(allocator, @ptrFromInt(@intFromEnum(buffer)), allocation);
 }
 
 pub inline fn destroyImage(allocator: Allocator, image: vk.Image, allocation: Allocation) void {
-    c.vmaDestroyImage(allocator, @bitCast(image), allocation);
+    c.vmaDestroyImage(allocator, @ptrFromInt(@intFromEnum(image)), allocation);
 }
 
 pub inline fn destroyVirtualBlock(block: VirtualBlock) void {
