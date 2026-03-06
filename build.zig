@@ -107,6 +107,20 @@ pub fn build(b: *std.Build) void {
         });
         ref_all_decls_test.root_module.addImport("vulkan", vk_zig_module);
         test_step.dependOn(&ref_all_decls_test.step);
+
+        // VMA binding tests (virtual block API -- no GPU required).
+        const vma_test_module = b.createModule(.{
+            .root_source_file = b.path("src/vma/vma_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        vma_test_module.addImport("vulkan", vk_zig_module);
+        vma_test_module.addIncludePath(vulkan_include);
+        vma_test_module.addIncludePath(b.path("src/vma"));
+        vma_test_module.linkLibrary(vma_lib);
+
+        const vma_test = b.addTest(.{ .root_module = vma_test_module });
+        test_step.dependOn(&b.addRunArtifact(vma_test).step);
     }
 
     const test_target = b.addTest(.{ .root_module = root_module });
