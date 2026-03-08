@@ -574,11 +574,14 @@ pub fn vulkanFunctionsFromDispatch(
         .vkCreateImage = if (@hasField(DD, "vkCreateImage")) device_dispatch.vkCreateImage else null,
         .vkDestroyImage = if (@hasField(DD, "vkDestroyImage")) device_dispatch.vkDestroyImage else null,
         .vkCmdCopyBuffer = if (@hasField(DD, "vkCmdCopyBuffer")) device_dispatch.vkCmdCopyBuffer else null,
-        .vkGetBufferMemoryRequirements2KHR = if (@hasField(DD, "vkGetBufferMemoryRequirements2KHR")) device_dispatch.vkGetBufferMemoryRequirements2KHR else if (@hasField(DD, "vkGetBufferMemoryRequirements2")) device_dispatch.vkGetBufferMemoryRequirements2 else null,
-        .vkGetImageMemoryRequirements2KHR = if (@hasField(DD, "vkGetImageMemoryRequirements2KHR")) device_dispatch.vkGetImageMemoryRequirements2KHR else if (@hasField(DD, "vkGetImageMemoryRequirements2")) device_dispatch.vkGetImageMemoryRequirements2 else null,
-        .vkBindBufferMemory2KHR = if (@hasField(DD, "vkBindBufferMemory2KHR")) device_dispatch.vkBindBufferMemory2KHR else if (@hasField(DD, "vkBindBufferMemory2")) device_dispatch.vkBindBufferMemory2 else null,
-        .vkBindImageMemory2KHR = if (@hasField(DD, "vkBindImageMemory2KHR")) device_dispatch.vkBindImageMemory2KHR else if (@hasField(DD, "vkBindImageMemory2")) device_dispatch.vkBindImageMemory2 else null,
-        .vkGetPhysicalDeviceMemoryProperties2KHR = if (@hasField(ID, "vkGetPhysicalDeviceMemoryProperties2KHR")) instance_dispatch.vkGetPhysicalDeviceMemoryProperties2KHR else if (@hasField(ID, "vkGetPhysicalDeviceMemoryProperties2")) instance_dispatch.vkGetPhysicalDeviceMemoryProperties2 else null,
+        // Prefer core Vulkan 1.1+ names over KHR extension names. vulkan-zig
+        // dispatch tables define both fields but only load the core versions
+        // at runtime when targeting Vulkan 1.1+, leaving KHR fields null.
+        .vkGetBufferMemoryRequirements2KHR = if (@hasField(DD, "vkGetBufferMemoryRequirements2")) device_dispatch.vkGetBufferMemoryRequirements2 else if (@hasField(DD, "vkGetBufferMemoryRequirements2KHR")) device_dispatch.vkGetBufferMemoryRequirements2KHR else null,
+        .vkGetImageMemoryRequirements2KHR = if (@hasField(DD, "vkGetImageMemoryRequirements2")) device_dispatch.vkGetImageMemoryRequirements2 else if (@hasField(DD, "vkGetImageMemoryRequirements2KHR")) device_dispatch.vkGetImageMemoryRequirements2KHR else null,
+        .vkBindBufferMemory2KHR = if (@hasField(DD, "vkBindBufferMemory2")) device_dispatch.vkBindBufferMemory2 else if (@hasField(DD, "vkBindBufferMemory2KHR")) device_dispatch.vkBindBufferMemory2KHR else null,
+        .vkBindImageMemory2KHR = if (@hasField(DD, "vkBindImageMemory2")) device_dispatch.vkBindImageMemory2 else if (@hasField(DD, "vkBindImageMemory2KHR")) device_dispatch.vkBindImageMemory2KHR else null,
+        .vkGetPhysicalDeviceMemoryProperties2KHR = if (@hasField(ID, "vkGetPhysicalDeviceMemoryProperties2")) instance_dispatch.vkGetPhysicalDeviceMemoryProperties2 else if (@hasField(ID, "vkGetPhysicalDeviceMemoryProperties2KHR")) instance_dispatch.vkGetPhysicalDeviceMemoryProperties2KHR else null,
         .vkGetDeviceBufferMemoryRequirements = if (@hasField(DD, "vkGetDeviceBufferMemoryRequirements")) device_dispatch.vkGetDeviceBufferMemoryRequirements else null,
         .vkGetDeviceImageMemoryRequirements = if (@hasField(DD, "vkGetDeviceImageMemoryRequirements")) device_dispatch.vkGetDeviceImageMemoryRequirements else null,
     };
