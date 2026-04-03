@@ -80,7 +80,7 @@ pub fn main() !void {
         break :blk .{ @intCast(w), @intCast(h) };
     };
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -217,7 +217,7 @@ fn copyBuffer(gc: *const GraphicsContext, pool: vk.CommandPool, dst: vk.Buffer, 
         .level = .primary,
         .command_buffer_count = 1,
     }, @ptrCast(&cmdbuf_handle));
-    defer gc.dev.freeCommandBuffers(pool, 1, @ptrCast(&cmdbuf_handle));
+    defer gc.dev.freeCommandBuffers(pool, &.{cmdbuf_handle});
 
     const cmdbuf = GraphicsContext.CommandBuffer.init(cmdbuf_handle, gc.dev.wrapper);
 
@@ -230,16 +230,16 @@ fn copyBuffer(gc: *const GraphicsContext, pool: vk.CommandPool, dst: vk.Buffer, 
         .dst_offset = 0,
         .size = size,
     };
-    cmdbuf.copyBuffer(src, dst, 1, @ptrCast(&region));
+    cmdbuf.copyBuffer(src, dst, &.{region});
 
     try cmdbuf.endCommandBuffer();
 
     const si = vk.SubmitInfo{
         .command_buffer_count = 1,
-        .p_command_buffers = (&cmdbuf.handle)[0..1],
+        .p_command_buffers = &.{cmdbuf.handle},
         .p_wait_dst_stage_mask = undefined,
     };
-    try gc.dev.queueSubmit(gc.graphics_queue.handle, 1, @ptrCast(&si), .null_handle);
+    try gc.dev.queueSubmit(gc.graphics_queue.handle, &.{si}, .null_handle);
     try gc.dev.queueWaitIdle(gc.graphics_queue.handle);
 }
 
@@ -261,7 +261,7 @@ fn createCommandBuffers(
         .level = .primary,
         .command_buffer_count = @intCast(cmdbufs.len),
     }, cmdbufs.ptr);
-    errdefer gc.dev.freeCommandBuffers(pool, @intCast(cmdbufs.len), cmdbufs.ptr);
+    errdefer gc.dev.freeCommandBuffers(pool, cmdbufs);
 
     const clear = vk.ClearValue{
         .color = .{ .float_32 = .{ 0, 0, 0, 1 } },
@@ -284,8 +284,8 @@ fn createCommandBuffers(
     for (cmdbufs, framebuffers) |cmdbuf, framebuffer| {
         try gc.dev.beginCommandBuffer(cmdbuf, &.{});
 
-        gc.dev.cmdSetViewport(cmdbuf, 0, 1, @ptrCast(&viewport));
-        gc.dev.cmdSetScissor(cmdbuf, 0, 1, @ptrCast(&scissor));
+        gc.dev.cmdSetViewport(cmdbuf, 0, &.{viewport});
+        gc.dev.cmdSetScissor(cmdbuf, 0, &.{scissor});
 
         // This needs to be a separate definition - see https://github.com/ziglang/zig/issues/7627.
         const render_area = vk.Rect2D{
@@ -303,18 +303,17 @@ fn createCommandBuffers(
 
         gc.dev.cmdBindPipeline(cmdbuf, .graphics, pipeline);
         const offset = [_]vk.DeviceSize{0};
-        gc.dev.cmdBindVertexBuffers(cmdbuf, 0, 1, @ptrCast(&buffer), &offset);
+        gc.dev.cmdBindVertexBuffers(cmdbuf, 0, &.{buffer}, &offset);
         gc.dev.cmdDraw(cmdbuf, vertices.len, 1, 0, 0);
 
         gc.dev.cmdEndRenderPass(cmdbuf);
         try gc.dev.endCommandBuffer(cmdbuf);
     }
-
     return cmdbufs;
 }
 
 fn destroyCommandBuffers(gc: *const GraphicsContext, pool: vk.CommandPool, allocator: Allocator, cmdbufs: []vk.CommandBuffer) void {
-    gc.dev.freeCommandBuffers(pool, @truncate(cmdbufs.len), cmdbufs.ptr);
+    gc.dev.freeCommandBuffers(pool, cmdbufs);
     allocator.free(cmdbufs);
 }
 
@@ -495,10 +494,9 @@ fn createPipeline(
     var pipeline: vk.Pipeline = undefined;
     _ = try gc.dev.createGraphicsPipelines(
         .null_handle,
-        1,
-        @ptrCast(&gpci),
+        &.{gpci},
         null,
-        @ptrCast(&pipeline),
+        (&pipeline)[0..1],
     );
     return pipeline;
 }

@@ -52,28 +52,30 @@ pub fn main(init: std.process.Init) !void {
 
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            @setEvalBranchQuota(2000);
             var buf: [1024]u8 = undefined;
             var w = std.Io.File.stdout().writer(io, &buf);
-            w.interface.print(
-                \\Utility to generate a Zig binding from the Vulkan XML API registry.
-                \\
-                \\The most recent Vulkan XML API registry can be obtained from
-                \\https://github.com/KhronosGroup/Vulkan-Docs/blob/master/xml/vk.xml,
-                \\and the most recent LunarG Vulkan SDK version can be found at
-                \\$VULKAN_SDK/x86_64/share/vulkan/registry/vk.xml.
-                \\
-                \\Usage: {s} [options] <spec xml path> <output zig source>
-                \\Options:
-                \\-h --help        show this message and exit.
-                \\-a --api <api>   Generate API for 'vulkan' or 'vulkansc'. Defaults to 'vulkan'.
-                \\--debug          Write out unformatted source if does not parse correctly.
-                \\--video <path>   Also gnerate Vulkan Video API bindings from video.xml
-                \\                 registry at <path>.
-                \\
-            ,
-                .{prog_name},
-            ) catch |err| {
+            (blk: {
+                w.interface.print(
+                    \\Utility to generate a Zig binding from the Vulkan XML API registry.
+                    \\
+                    \\The most recent Vulkan XML API registry can be obtained from
+                    \\https://github.com/KhronosGroup/Vulkan-Docs/blob/master/xml/vk.xml,
+                    \\and the most recent LunarG Vulkan SDK version can be found at
+                    \\$VULKAN_SDK/x86_64/share/vulkan/registry/vk.xml.
+                    \\
+                    \\Usage: {s} [options] <spec xml path> <output zig source>
+                    \\Options:
+                    \\-h --help        show this message and exit.
+                    \\-a --api <api>   Generate API for 'vulkan' or 'vulkansc'. Defaults to 'vulkan'.
+                    \\--debug          Write out unformatted source if does not parse correctly.
+                    \\--video <path>   Also generate Vulkan Video API bindings from video.xml
+                    \\                 registry at <path>.
+                    \\
+                ,
+                    .{prog_name},
+                ) catch |err| break :blk err;
+                w.flush() catch |err| break :blk err;
+            }) catch |err| {
                 std.process.fatal("failed to write to stdout: {s}", .{@errorName(err)});
             };
             return;
@@ -95,7 +97,7 @@ pub fn main(init: std.process.Init) !void {
         } else if (maybe_out_path == null) {
             maybe_out_path = arg;
         } else {
-            invalidUsage(prog_name, "superficial argument '{s}'", .{arg});
+            invalidUsage(prog_name, "unexpected argument '{s}'", .{arg});
         }
     }
 

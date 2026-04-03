@@ -363,6 +363,7 @@ const Renderer = struct {
         mut_buffer_len,
         buffer_len,
         dispatch_handle,
+        slice,
         other,
     };
 
@@ -564,7 +565,7 @@ const Renderer = struct {
         return false;
     }
 
-    fn classifyParam(self: Self, param: reg.Command.Param) !ParamType {
+    fn classifyParam(self: Self, params: []const reg.Command.Param, param: reg.Command.Param) !ParamType {
         switch (param.param_type) {
             .pointer => |ptr| {
                 if (param.is_buffer_len) {
@@ -582,6 +583,17 @@ const Renderer = struct {
                     } else if (builtin_types.get(child_name) == null and trimVkNamespace(child_name).ptr == child_name.ptr) {
                         return .other; // External type
                     }
+                }
+
+                if (ptr.size == .other_field) {
+                    for (params) |p| {
+                        if (mem.eql(u8, p.name, ptr.size.other_field)) {
+                            // If the length param is a pointer (mut_buffer_len), not a slice
+                            if (p.param_type == .pointer) return .other;
+                            return .slice;
+                        }
+                    }
+                    return .other;
                 }
 
                 if (ptr.size == .one and !ptr.is_optional) {
@@ -1275,9 +1287,9 @@ const Renderer = struct {
             try self.writer.writeAll("pub const ");
             try self.renderName(name);
             try self.writer.print(
-                \\ = packed struct {{
+                \\ = packed struct({s}) {{
                 \\_reserved_bits: {s} = 0,
-            , .{flags_type});
+            , .{ flags_type, flags_type });
             try self.renderFlagFunctions(name, "FlagsMixin", flag_functions, null);
             try self.writer.writeAll("};\n");
         }
@@ -1642,22 +1654,7 @@ const Renderer = struct {
         );
         try self.writeIdentifierWithCase(.camel, trimVkNamespace(name));
         try self.writer.writeByte('(');
-
-        for (command.params) |param| {
-            switch (try self.classifyParam(param)) {
-                .out_pointer => continue,
-                .dispatch_handle => {
-                    if (mem.eql(u8, param.param_type.name, dispatch_handle)) {
-                        try self.writer.writeAll("self.handle");
-                    } else {
-                        try self.renderParamName(param.name);
-                    }
-                },
-                else => try self.renderParamName(param.name),
-            }
-            try self.writer.writeAll(", ");
-        }
-
+        try self.renderProxyCallArgs(name, command.params, command.params, dispatch_handle);
         try self.writer.writeAll(
             \\);
             \\}
@@ -1699,10 +1696,30 @@ const Renderer = struct {
         );
         try self.writeIdentifierWithCase(.camel, trimVkNamespace(name));
         try self.writer.writeByte('(');
+        try self.renderProxyCallArgs(wrapped_name, params, command.params, dispatch_handle);
+        try self.writer.writeAll(
+            \\allocator,);
+            \\}
+            \\
+        );
+    }
 
-        for (params) |param| {
-            switch (try self.classifyParam(param)) {
-                .out_pointer => return error.InvalidRegistry,
+    fn renderProxyCallArgs(
+        self: *Self,
+        name: []const u8,
+        iter_params: []const reg.Command.Param,
+        params: []const reg.Command.Param,
+        dispatch_handle: []const u8,
+    ) !void {
+        for (iter_params) |param| {
+            switch (try self.classifyParam(iter_params, param)) {
+                .out_pointer => continue,
+                .buffer_len => {
+                    if (try self.shouldSkipLen(name, params, param)) {
+                        continue;
+                    }
+                    try self.renderParamName(param.name);
+                },
                 .dispatch_handle => {
                     if (mem.eql(u8, param.param_type.name, dispatch_handle)) {
                         try self.writer.writeAll("self.handle");
@@ -1714,12 +1731,6 @@ const Renderer = struct {
             }
             try self.writer.writeAll(", ");
         }
-
-        try self.writer.writeAll(
-            \\allocator,);
-            \\}
-            \\
-        );
     }
 
     fn derefName(name: []const u8) []const u8 {
@@ -1777,18 +1788,23 @@ const Renderer = struct {
         try self.writer.writeAll("(self: Self, ");
 
         for (command.params) |param| {
-            const class = try self.classifyParam(param);
+            const class = try self.classifyParam(command.params, param);
             // Skip the dispatch type for proxying wrappers
             if (kind == .proxy and class == .dispatch_handle and mem.eql(u8, param.param_type.name, dispatch_handle)) {
                 continue;
             }
-
             // This parameter is returned instead.
             if (class == .out_pointer) {
                 continue;
             }
-
-            try self.renderWrapperParam(param);
+            if (try self.shouldSkipLen(name, command.params, param)) {
+                continue;
+            }
+            if (class == .slice) {
+                try self.renderSliceParam(param);
+            } else {
+                try self.renderWrapperParam(param);
+            }
         }
 
         try self.writer.writeAll(") ");
@@ -1820,7 +1836,7 @@ const Renderer = struct {
         try self.writer.writeAll(".?(");
 
         for (command.params) |param| {
-            switch (try self.classifyParam(param)) {
+            switch (try self.classifyParam(command.params, param)) {
                 .out_pointer => {
                     try self.writer.writeByte('&');
                     try self.writeIdentifierWithCase(.snake, return_var_name.?);
@@ -1829,7 +1845,19 @@ const Renderer = struct {
                         try self.renderParamName(derefName(param.name));
                     }
                 },
-                else => try self.renderParamName(param.name),
+                .buffer_len => {
+                    if (!try self.shouldSkipLen(name, command.params, param) or
+                        !try self.renderSliceLenCallArg(param, command.params))
+                    {
+                        try self.renderParamName(param.name);
+                    }
+                },
+                .slice => {
+                    try self.renderSlicePtrCallArg(param);
+                },
+                else => {
+                    try self.renderParamName(param.name);
+                },
             }
 
             try self.writer.writeAll(", ");
@@ -1856,7 +1884,6 @@ const Renderer = struct {
             if (command.return_type.* != .name or !mem.eql(u8, command.return_type.name, "VkResult")) {
                 return error.InvalidRegistry;
             }
-
             try returns.append(allocator, .{
                 .name = "result",
                 .return_value_type = command.return_type.*,
@@ -1867,7 +1894,7 @@ const Renderer = struct {
         }
 
         for (command.params) |param| {
-            if ((try self.classifyParam(param)) == .out_pointer) {
+            if ((try self.classifyParam(command.params, param)) == .out_pointer) {
                 try returns.append(allocator, .{
                     .name = derefName(param.name),
                     .return_value_type = param.param_type.pointer.child.*,
@@ -1922,7 +1949,8 @@ const Renderer = struct {
         try self.renderWrapperPrototype(name, command, returns, "", .wrapper);
 
         if (returns.len == 1 and returns[0].origin == .inner_return_value) {
-            try self.writer.writeAll("{\n\n");
+            try self.writer.writeAll("{\n");
+            try self.renderSliceLenAsserts(name, command.params);
 
             if (returns_vk_result) {
                 try self.writer.writeAll("const result = ");
@@ -1937,7 +1965,7 @@ const Renderer = struct {
                 try self.writer.writeAll(";\n");
             }
 
-            try self.writer.writeAll("\n}\n");
+            try self.writer.writeAll("}\n");
             return;
         }
 
@@ -1947,6 +1975,8 @@ const Renderer = struct {
             "return_values";
 
         try self.writer.writeAll("{\n");
+        try self.renderSliceLenAsserts(name, command.params);
+
         if (returns.len == 1) {
             try self.writer.writeAll("var ");
             try self.writeIdentifierWithCase(.snake, return_var_name);
@@ -1995,15 +2025,22 @@ const Renderer = struct {
         kind: WrapperKind,
     ) !void {
         try self.writer.writeAll("pub fn ");
-        try self.renderWrapperName(name, "", .wrapper);
+        try self.renderWrapperName(name, dispatch_handle, kind);
         try self.writer.writeAll("(self: Self, ");
         for (params) |param| {
-            const class = try self.classifyParam(param);
+            const class = try self.classifyParam(params, param);
             // Skip the dispatch type for proxying wrappers
             if (kind == .proxy and class == .dispatch_handle and mem.eql(u8, param.param_type.name, dispatch_handle)) {
                 continue;
             }
-            try self.renderWrapperParam(param);
+            if (try self.shouldSkipLen(name, params, param)) {
+                continue;
+            }
+            if (class == .slice) {
+                try self.renderSliceParam(param);
+            } else {
+                try self.renderWrapperParam(param);
+            }
         }
         try self.writer.writeAll("allocator: Allocator,) ");
 
@@ -2055,6 +2092,7 @@ const Renderer = struct {
         try self.renderAllocWrapperPrototype(name, params, returns_vk_result, data_type, "", .wrapper);
 
         try self.writer.writeAll("{\n");
+        try self.renderSliceLenAsserts(wrapped_name, params);
         try self.writer.writeAll("    var count: ");
         try self.renderTypeInfo(count_type);
         try self.writer.writeAll(" = undefined;\n");
@@ -2071,13 +2109,7 @@ const Renderer = struct {
             );
         }
 
-        try self.writer.writeAll(" self.");
-        try self.renderWrapperName(wrapped_name, "", .wrapper);
-        try self.writer.writeAll("(\n");
-        for (params) |param| {
-            try self.renderParamName(param.name);
-            try self.writer.writeAll(", ");
-        }
+        try self.renderAllocCallParams(wrapped_name, params);
         try self.writer.writeAll("&count, null);\n");
 
         if (returns_vk_result) {
@@ -2094,13 +2126,7 @@ const Renderer = struct {
             );
         }
 
-        try self.writer.writeAll(" self.");
-        try self.renderWrapperName(wrapped_name, "", .wrapper);
-        try self.writer.writeAll("(\n");
-        for (params) |param| {
-            try self.renderParamName(param.name);
-            try self.writer.writeAll(", ");
-        }
+        try self.renderAllocCallParams(wrapped_name, params);
         try self.writer.writeAll("&count, data.ptr);\n");
 
         if (returns_vk_result) {
@@ -2111,6 +2137,30 @@ const Renderer = struct {
             \\    return if (count == data.len) data else allocator.realloc(data, count);
             \\}
         );
+    }
+
+    fn renderAllocCallParams(self: *Self, wrapped_name: []const u8, params: []const reg.Command.Param) !void {
+        try self.writer.writeAll(" self.");
+        try self.renderWrapperName(wrapped_name, "", .wrapper);
+        try self.writer.writeAll("(\n");
+        for (params) |param| {
+            switch (try self.classifyParam(params, param)) {
+                .buffer_len => {
+                    if (!try self.shouldSkipLen(wrapped_name, params, param) or
+                        !try self.renderSliceLenCallArg(param, params))
+                    {
+                        try self.renderParamName(param.name);
+                    }
+                },
+                .slice => {
+                    try self.renderSlicePtrCallArg(param);
+                },
+                else => {
+                    try self.renderParamName(param.name);
+                },
+            }
+            try self.writer.writeAll(", ");
+        }
     }
 
     fn renderErrorSwitch(self: *Self, result_var: []const u8, command: reg.Command) !void {
@@ -2155,6 +2205,121 @@ const Renderer = struct {
             // Apparently some commands (VkAcquireProfilingLockInfoKHR) return
             // success codes as error...
             try self.writeIdentifierWithCase(.title, trimVkNamespace(name));
+        }
+    }
+
+    fn findRefSliceParam(self: Self, params: []const reg.Command.Param, len_name: []const u8) !?reg.Command.Param {
+        var result: ?reg.Command.Param = null;
+        for (params) |param| {
+            if ((try self.classifyParam(params, param)) != .slice) continue;
+            if (!mem.eql(u8, param.param_type.pointer.size.other_field, len_name)) continue;
+            result = param;
+            if (!param.param_type.pointer.is_optional) break;
+        }
+        return result;
+    }
+
+    fn shouldSkipLen(self: Self, function_name: []const u8, params: []const reg.Command.Param, param: reg.Command.Param) !bool {
+        if ((try self.classifyParam(params, param)) != .buffer_len) return false;
+        if ((try self.findRefSliceParam(params, param.name)) == null) return false;
+        const skip_set = std.StaticStringMap(void).initComptime(.{
+            .{ "vkCmdBeginTransformFeedbackEXT", {} },
+            .{ "vkCmdEndTransformFeedbackEXT", {} },
+        });
+        return !skip_set.has(function_name);
+    }
+
+    fn renderSliceParam(self: *Self, param: reg.Command.Param) !void {
+        const ptr = param.param_type.pointer;
+        try self.renderParamName(param.name);
+        try self.writer.writeByte(':');
+        if (ptr.is_optional) try self.writer.writeByte('?');
+        try self.writer.writeAll("[]");
+        if (ptr.is_const) try self.writer.writeAll("const ");
+        try self.renderTypeInfo(ptr.child.*);
+        try self.writer.writeByte(',');
+    }
+
+    fn renderSlicePtrCallArg(self: *Self, param: reg.Command.Param) !void {
+        if (param.param_type.pointer.is_optional) {
+            try self.writer.writeAll("if (");
+            try self.renderParamName(param.name);
+            try self.writer.writeAll(") |s| s.ptr else null");
+        } else {
+            try self.renderParamName(param.name);
+            try self.writer.writeAll(".ptr");
+        }
+    }
+
+    fn renderSliceLenCallArg(self: *Self, len_param: reg.Command.Param, params: []const reg.Command.Param) !bool {
+        const ref_param = (try self.findRefSliceParam(params, len_param.name)) orelse return false;
+
+        try self.writer.writeAll("@intCast(");
+        if (ref_param.param_type.pointer.is_optional) {
+            for (params) |param| {
+                if ((try self.classifyParam(params, param)) != .slice) continue;
+                if (!mem.eql(u8, param.param_type.pointer.size.other_field, len_param.name)) continue;
+                try self.writer.writeAll("if (");
+                try self.renderParamName(param.name);
+                try self.writer.writeAll(") |s| s.len else ");
+            }
+            try self.writer.writeAll("0)");
+        } else {
+            try self.renderParamName(ref_param.name);
+            try self.writer.writeAll(".len)");
+        }
+        return true;
+    }
+
+    // NOTE: if multiple buffer args are linked to a single count parameter and they are all optional (this never happens in the vulkan spec yet)
+    // the generated assertions will not be exhaustive
+    fn renderSliceLenAsserts(self: *Self, function_name: []const u8, params: []const reg.Command.Param) !void {
+        for (params) |len_param| {
+            if ((try self.classifyParam(params, len_param)) != .buffer_len) continue;
+
+            const ref_slice = (try self.findRefSliceParam(params, len_param.name)) orelse continue;
+            const ref_slice_opt = ref_slice.param_type.pointer.is_optional;
+            const len_param_kept = !try self.shouldSkipLen(function_name, params, len_param);
+
+            const ref_param, const ref_is_slice, const ref_is_opt = switch (ref_slice_opt) {
+                false => .{ ref_slice, true, false },
+                true => switch (len_param_kept) {
+                    true => .{ len_param, false, false },
+                    false => .{ ref_slice, true, true },
+                },
+            };
+
+            for (params) |other| {
+                const other_class = try self.classifyParam(params, other);
+                if (other_class != .slice) continue;
+                if (!mem.eql(u8, other.param_type.pointer.size.other_field, len_param.name)) continue;
+                if (ref_is_slice and mem.eql(u8, other.name, ref_param.name)) continue;
+                const other_opt = other.param_type.pointer.is_optional;
+
+                try self.writer.writeAll("std.debug.assert(");
+                if (ref_is_opt) {
+                    try self.renderParamName(ref_param.name);
+                    try self.writer.writeAll(" == null or ");
+                }
+                if (other_opt) {
+                    try self.renderParamName(other.name);
+                    try self.writer.writeAll(" == null or ");
+                }
+
+                try self.renderParamName(ref_param.name);
+                if (ref_is_slice) {
+                    if (ref_is_opt) try self.writer.writeAll(".?");
+                    try self.writer.writeAll(".len");
+                }
+
+                try self.writer.writeAll(" == ");
+
+                try self.renderParamName(other.name);
+                if (other_opt) try self.writer.writeAll(".?");
+                try self.writer.writeAll(".len");
+
+                try self.writer.writeAll(");\n");
+            }
         }
     }
 };

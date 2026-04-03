@@ -10,6 +10,10 @@
             .url = "https://github.com/KhronosGroup/Vulkan-Headers/archive/v1.3.283.tar.gz",
             .hash = "N-V-__8AAAkkoQGn5z1yoNVrwqZfnYmZp8AZ5CJgoHRMQI0c",
         },
+        .glfw = .{
+            .url = "git+https://github.com/allyourcodebase/glfw#79e7ba3d082765954b59c4f11a2f9b4ff1ecb350",
+            .hash = "glfw-0.0.0-R5AeUo0JGgBvENV2Oz-u0V_unpWhEJTfK4qckBH5da6e",
+        },
     },
     .paths = .{""},
 }

@@ -224,6 +224,8 @@ fn initializeCandidate(instance: Instance, candidate: DeviceCandidate) !vk.Devic
         .p_queue_create_infos = &qci,
         .enabled_extension_count = required_device_extensions.len,
         .pp_enabled_extension_names = @ptrCast(&required_device_extensions),
+        .enabled_layer_count = 0,
+        .pp_enabled_layer_names = undefined,
     }, null);
 }
 
