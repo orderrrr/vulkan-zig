@@ -1,6 +1,6 @@
 const std = @import("std");
 const vk = @import("vulkan");
-const c = @import("c.zig");
+const c = @import("c");
 const Allocator = std.mem.Allocator;
 
 const required_layer_names = [_][*:0]const u8{"VK_LAYER_KHRONOS_validation"};
@@ -29,6 +29,13 @@ const DeviceWrapper = vk.DeviceWrapper;
 const Instance = vk.InstanceProxy;
 const Device = vk.DeviceProxy;
 
+fn getGlfwInstanceProcAddr(instance: vk.Instance, procname: [*:0]const u8) vk.PfnVoidFunction {
+    return @ptrCast(c.glfwGetInstanceProcAddress(
+        @ptrFromInt(@intFromEnum(instance)),
+        procname,
+    ));
+}
+
 pub const GraphicsContext = struct {
     pub const CommandBuffer = vk.CommandBufferProxy;
 
@@ -50,7 +57,7 @@ pub const GraphicsContext = struct {
     pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: *c.GLFWwindow) !GraphicsContext {
         var self: GraphicsContext = undefined;
         self.allocator = allocator;
-        self.vkb = BaseWrapper.load(c.glfwGetInstanceProcAddress);
+        self.vkb = BaseWrapper.load(getGlfwInstanceProcAddr);
 
         if (try checkLayerSupport(&self.vkb, self.allocator) == false) {
             return error.MissingLayer;
@@ -192,7 +199,13 @@ pub const Queue = struct {
 
 fn createSurface(instance: Instance, window: *c.GLFWwindow) !vk.SurfaceKHR {
     var surface: vk.SurfaceKHR = undefined;
-    if (c.glfwCreateWindowSurface(instance.handle, window, null, &surface) != .success) {
+    const result: vk.Result = @enumFromInt(c.glfwCreateWindowSurface(
+        @ptrFromInt(@intFromEnum(instance.handle)),
+        window,
+        null,
+        @ptrCast(&surface),
+    ));
+    if (result != .success) {
         return error.SurfaceInitFailed;
     }
 

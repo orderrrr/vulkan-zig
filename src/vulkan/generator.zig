@@ -9,9 +9,9 @@ const Allocator = mem.Allocator;
 const FeatureLevel = reg.FeatureLevel;
 
 const EnumFieldMerger = struct {
-    const EnumExtensionMap = std.StringArrayHashMapUnmanaged(std.ArrayListUnmanaged(reg.Enum.Field));
-    const ApiConstantMap = std.StringArrayHashMapUnmanaged(reg.ApiConstant);
-    const FieldSet = std.StringArrayHashMapUnmanaged(void);
+    const EnumExtensionMap = std.array_hash_map.String(std.ArrayListUnmanaged(reg.Enum.Field));
+    const ApiConstantMap = std.array_hash_map.String(reg.ApiConstant);
+    const FieldSet = std.array_hash_map.String(void);
 
     arena: Allocator,
     registry: *reg.Registry,
@@ -43,12 +43,15 @@ const EnumFieldMerger = struct {
             for (req.extends) |enum_ext| {
                 switch (enum_ext.value) {
                     .field => try self.putEnumExtension(enum_ext.extends, enum_ext.value.field),
-                    .new_api_constant_expr => |expr| try self.api_constants.put(
+                    .new_api_constant => |expr| try self.api_constants.put(
                         self.arena,
                         enum_ext.extends,
                         .{
                             .name = enum_ext.extends,
-                            .value = .{ .expr = expr },
+                            .value = .{
+                                .expr = expr.expr,
+                            },
+                            .comment = expr.comment,
                         },
                     ),
                 }
@@ -155,8 +158,10 @@ pub const Generator = struct {
 
     // https://github.com/KhronosGroup/Vulkan-Docs/pull/1556
     fn fixupBitFlags(self: *Generator) !void {
-        var seen_bits = std.StringArrayHashMap(void).init(self.arena.allocator());
-        defer seen_bits.deinit();
+        const arena = self.arena.allocator();
+
+        var seen_bits: std.array_hash_map.String(void) = .empty;
+        defer seen_bits.deinit(arena);
 
         for (self.registry.decls) |decl| {
             const bitmask = switch (decl.decl_type) {
@@ -165,7 +170,7 @@ pub const Generator = struct {
             };
 
             if (bitmask.bits_enum) |bits_enum| {
-                try seen_bits.put(bits_enum, {});
+                try seen_bits.put(arena, bits_enum, {});
             }
         }
 

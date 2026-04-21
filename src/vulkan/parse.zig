@@ -243,6 +243,7 @@ fn parseContainer(allocator: Allocator, ty: *xml.Element, is_union: bool, api: r
                 return error.InvalidRegistry;
             }
         }
+
         i += 1;
     }
 
@@ -260,6 +261,8 @@ fn parseContainer(allocator: Allocator, ty: *xml.Element, is_union: bool, api: r
         }
     }
 
+    const is_vk_device_create_info = mem.eql(u8, name, "VkDeviceCreateInfo");
+
     it = ty.findChildrenByTag("member");
     for (members) |*member| {
         const member_elem = while (it.next()) |elem| {
@@ -272,6 +275,18 @@ fn parseContainer(allocator: Allocator, ty: *xml.Element, is_union: bool, api: r
         if (mem.eql(u8, member.name, "pNext")) {
             member.field_type.pointer.is_optional = true;
         }
+
+        // HACK: These fields don't have the correct attributes set. Probably because they are
+        // deprecated. Just fix them up here to create a valid registry.
+        if (is_vk_device_create_info) {
+            if (mem.eql(u8, member.name, "enabledLayerCount")) {
+                member.is_optional = true;
+            } else if (mem.eql(u8, member.name, "ppEnabledLayerNames")) {
+                member.field_type.pointer.is_optional = true;
+                member.field_type.pointer.size = .{ .other_field = "enabledLayerCount" };
+                member.field_type.pointer.child.pointer.size = .zero_terminated;
+            }
+        }
     }
 
     return registry.Declaration{
@@ -282,6 +297,7 @@ fn parseContainer(allocator: Allocator, ty: *xml.Element, is_union: bool, api: r
                 .fields = members,
                 .is_union = is_union,
                 .extends = maybe_extends,
+                .comment = ty.getAttribute("comment"),
             },
         },
     };
@@ -291,7 +307,7 @@ fn parseFuncPointer(allocator: Allocator, ty: *xml.Element, api: registry.Api) !
     // The layout of this field changed somewhere around version 339. Just try to parse it as the new
     // version first and fall back to the old version of that fails...
 
-    const decl = parseCommand(allocator, ty, api) catch {
+    const decl = parseCommand(allocator, ty, api, true) catch {
         // Old definitions were a typedef like this
         //
         // <type category="funcpointer">typedef void (VKAPI_PTR *<name>PFN_vkInternalAllocationNotification</name>)(
@@ -502,9 +518,10 @@ fn parseEnumFields(allocator: Allocator, elem: *xml.Element, api: registry.Api) 
 }
 
 fn parseEnumField(field: *xml.Element) !registry.Enum.Field {
-    const is_compat_alias = if (field.getAttribute("comment")) |comment|
-        mem.eql(u8, comment, "Backwards-compatible alias containing a typo") or
-            mem.eql(u8, comment, "Deprecated name for backwards compatibility")
+    const comment = field.getAttribute("comment");
+    const is_compat_alias = if (comment) |contents|
+        mem.eql(u8, contents, "Backwards-compatible alias containing a typo") or
+            mem.eql(u8, contents, "Deprecated name for backwards compatibility")
     else
         false;
 
@@ -536,6 +553,7 @@ fn parseEnumField(field: *xml.Element) !registry.Enum.Field {
     return registry.Enum.Field{
         .name = name,
         .value = value,
+        .comment = comment,
     };
 }
 
@@ -550,7 +568,7 @@ fn parseCommands(
         if (!requiredByApi(elem, api))
             continue;
 
-        try decls.append(allocator, try parseCommand(allocator, elem, api));
+        try decls.append(allocator, try parseCommand(allocator, elem, api, false));
     }
 }
 
@@ -569,7 +587,7 @@ fn splitCommaAlloc(allocator: Allocator, text: []const u8) ![][]const u8 {
     return codes;
 }
 
-fn parseCommand(allocator: Allocator, elem: *xml.Element, api: registry.Api) !registry.Declaration {
+fn parseCommand(allocator: Allocator, elem: *xml.Element, api: registry.Api, ptrs_optional: bool) !registry.Declaration {
     if (elem.getAttribute("alias")) |alias| {
         const name = elem.getAttribute("name") orelse return error.InvalidRegistry;
         return registry.Declaration{
@@ -582,7 +600,7 @@ fn parseCommand(allocator: Allocator, elem: *xml.Element, api: registry.Api) !re
 
     const proto = elem.findChildByTag("proto") orelse return error.InvalidRegistry;
     var proto_xctok = cparse.XmlCTokenizer.init(proto);
-    const command_decl = try cparse.parseParamOrProto(allocator, &proto_xctok, false);
+    const command_decl = try cparse.parseParamOrProto(allocator, &proto_xctok, ptrs_optional);
 
     var params = try allocator.alloc(registry.Command.Param, elem.children.len);
 
@@ -593,7 +611,7 @@ fn parseCommand(allocator: Allocator, elem: *xml.Element, api: registry.Api) !re
             continue;
 
         var xctok = cparse.XmlCTokenizer.init(param);
-        const decl = try cparse.parseParamOrProto(allocator, &xctok, false);
+        const decl = try cparse.parseParamOrProto(allocator, &xctok, ptrs_optional);
         params[i] = .{
             .name = decl.name,
             .param_type = decl.decl_type.typedef,
@@ -684,6 +702,7 @@ fn parseApiConstants(
             try api_constants.append(allocator, .{
                 .name = constant.getAttribute("name") orelse return error.InvalidRegistry,
                 .value = .{ .expr = expr },
+                .comment = constant.getAttribute("comment") orelse null,
             });
         }
     }
@@ -708,17 +727,21 @@ fn parseDefines(
             continue;
         }
 
+        const comment = ty.getAttribute("comment");
+
         const name = ty.getCharData("name") orelse continue;
         if (mem.eql(u8, name, "VK_HEADER_VERSION") or mem.eql(u8, name, "VKSC_API_VARIANT")) {
             try api_constants.append(allocator, .{
                 .name = name,
                 .value = .{ .expr = mem.trim(u8, ty.children[2].char_data, " ") },
+                .comment = comment,
             });
         } else {
             var xctok = cparse.XmlCTokenizer.init(ty);
             try api_constants.append(allocator, .{
                 .name = name,
                 .value = cparse.parseVersion(&xctok) catch continue,
+                .comment = comment,
             });
         }
     }
@@ -783,6 +806,8 @@ fn parseEnumExtension(elem: *xml.Element, parent_extnumber: ?u31) !?registry.Req
         return null;
     }
 
+    const comment = elem.getAttribute("comment");
+
     const extends = elem.getAttribute("extends") orelse {
         const expr = elem.getAttribute("value") orelse return null;
         // This adds a value to the 'API constants' set
@@ -790,7 +815,12 @@ fn parseEnumExtension(elem: *xml.Element, parent_extnumber: ?u31) !?registry.Req
         return registry.Require.EnumExtension{
             .extends = name,
             .extnumber = null,
-            .value = .{ .new_api_constant_expr = expr },
+            .value = .{
+                .new_api_constant = .{
+                    .expr = expr,
+                    .comment = comment,
+                },
+            },
         };
     };
 
@@ -822,6 +852,7 @@ fn parseEnumExtension(elem: *xml.Element, parent_extnumber: ?u31) !?registry.Req
                 .field = .{
                     .name = name,
                     .value = .{ .int = value },
+                    .comment = comment,
                 },
             },
         };
