@@ -1274,10 +1274,10 @@ const Renderer = struct {
         if (bits.fields.len == 0) {
             try self.writer.print("_reserved_bits: {s} = 0,", .{flags_type});
         } else {
-            var flags_by_bitpos = [_]?struct {
+            var flags_by_bitpos: [64]?struct {
                 name: []const u8,
                 comment: ?[]const u8,
-            }{null} ** 64;
+            } = @splat(null);
             for (bits.fields) |field| {
                 if (field.value == .bitpos) {
                     flags_by_bitpos[field.value.bitpos] = .{

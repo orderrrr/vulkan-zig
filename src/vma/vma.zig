@@ -15,11 +15,8 @@
 const std = @import("std");
 const vk = @import("vulkan");
 
-const c = @cImport({
-    @cDefine("VMA_STATIC_VULKAN_FUNCTIONS", "0");
-    @cDefine("VMA_DYNAMIC_VULKAN_FUNCTIONS", "0");
-    @cInclude("vk_mem_alloc.h");
-});
+// Translated from vma_c.h at build time; Zig 0.17 removes @cImport.
+const c = @import("vma_c");
 
 // Error handling
 

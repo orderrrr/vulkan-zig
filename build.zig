@@ -1,4 +1,5 @@
 const std = @import("std");
+const Translator = @import("translate_c").Translator;
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -79,6 +80,16 @@ pub fn build(b: *std.Build) void {
         vma_module.addIncludePath(vulkan_include);
         vma_module.addIncludePath(b.path("src/vma"));
         vma_module.linkLibrary(vma_lib);
+        const vma_c: Translator = .init(b.dependency("translate_c", .{}), .{
+            .name = "vma_c",
+        .default_init = true, // matches @cImport, which callers rely on
+            .c_source_file = b.path("src/vma/vma_c.h"),
+            .target = target,
+            .optimize = optimize,
+        });
+        vma_c.addIncludePath(vulkan_include);
+        vma_c.addIncludePath(b.path("src/vma"));
+        vma_module.addImport("vma_c", vma_c.mod);
 
         // Create the vulkan-zig module with VMA as a sub-import.
         // The generated vk.zig contains `pub const vma = @import("vma");`
